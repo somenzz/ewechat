@@ -3,22 +3,23 @@ package ewechat
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
+	"time"
 )
 
-type EWechat struct {
-	CorpID     string
-	CorpSecret string
-	AgentID    int
-}
-
 func (e *EWechat) getToken() (string, error) {
-	type WechatAccessTokenResponse struct {
-		AccessToken string `json:"access_token"`
-	}
+	e.mutex.Lock()
+	defer e.mutex.Unlock()
 
+	// Check if the current token is still valid
+	if e.token != "" && time.Now().Before(e.tokenExpiry) {
+		return e.token, nil
+	}
+	// If not, fetch a new token
 	apiURL := "https://qyapi.weixin.qq.com/cgi-bin/gettoken?corpid=" + e.CorpID + "&corpsecret=" + e.CorpSecret
+	// ... rest of the HTTP request code ...
 	request, _ := http.NewRequest("GET", apiURL, nil)
 
 	client := &http.Client{}
@@ -30,35 +31,30 @@ func (e *EWechat) getToken() (string, error) {
 	defer response.Body.Close()
 
 	body, _ := io.ReadAll(response.Body)
+
 	var model WechatAccessTokenResponse
+	err = json.Unmarshal(body, &model)
+	if err != nil {
+		return "", err
+	}
 
-	json.Unmarshal(body, &model)
-
-	return model.AccessToken, nil
+	// Update the token and its expiry time
+	if model.ErrCode == 0 { //出错返回码，为0表示成功，非0表示调用失败
+		e.token = model.AccessToken
+		e.tokenExpiry = time.Now().Add(time.Duration(model.ExpiresIn) * time.Second)
+		return e.token, nil
+	}
+	return "", fmt.Errorf(model.ErrMsg)
 }
 
 func (e *EWechat) SendMessage(text string, users string) (string, error) {
-	type SendRequest struct {
-		ToUser  string `json:"touser"`
-		MsgType string `json:"msgtype"`
-		AgentID int    `json:"agentid"`
-		Text    struct {
-			Content string `json:"content"`
-		} `json:"text"`
-		Safe int `json:"safe"`
-	}
 
-	type WechatPostMessageReponse struct {
-		ErrorMessage string `json:"errmsg"`
-	}
-
-	model := SendRequest{}
+	model := TextMessage{}
 	model.ToUser = users
 	model.MsgType = "text"
 	model.AgentID = e.AgentID
 	model.Text.Content = text
 	model.Safe = 0
-
 	requestJSON, _ := json.Marshal(model)
 	token, err := e.getToken()
 	if err != nil {
@@ -73,13 +69,10 @@ func (e *EWechat) SendMessage(text string, users string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-
 	defer response.Body.Close()
 
 	body, _ := io.ReadAll(response.Body)
-	var responseModel WechatPostMessageReponse
-
+	var responseModel WechatPostMessageResponse
 	json.Unmarshal(body, &responseModel)
-
-	return responseModel.ErrorMessage, nil
+	return responseModel.ErrMsg, nil
 }

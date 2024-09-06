@@ -1,5 +1,10 @@
 # golang 发送企业微信通知的包
 
+## 更新说明
+
+- access_token 失效之前，避免重复调用接口获取 access_token
+
+
 使用样例：
 
 ```golang

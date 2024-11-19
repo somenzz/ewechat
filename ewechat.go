@@ -76,3 +76,32 @@ func (e *EWechat) SendMessage(text string, users string) (string, error) {
 	json.Unmarshal(body, &responseModel)
 	return responseModel.ErrMsg, nil
 }
+func (e *EWechat) GetUserID(telephone string) (string, error) {
+	token, err := e.getToken()
+	if err != nil {
+		return "", err
+	}
+
+	apiURL := "https://qyapi.weixin.qq.com/cgi-bin/user/getuserid?access_token=" + token
+	body := map[string]string{"mobile": telephone}
+	requestJSON, _ := json.Marshal(body)
+	request, _ := http.NewRequest("POST", apiURL, bytes.NewBuffer(requestJSON))
+	request.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{}
+	response, err := client.Do(request)
+	if err != nil {
+		return "", err
+	}
+	defer response.Body.Close()
+
+	responseBody, _ := io.ReadAll(response.Body)
+	var res map[string]interface{}
+	json.Unmarshal(responseBody, &res)
+
+	if res["errmsg"] == "ok" {
+		return res["userid"].(string), nil
+	} else {
+		return "", fmt.Errorf(res["errmsg"].(string))
+	}
+}
